@@ -1,0 +1,188 @@
+<?php
+
+namespace App\Http\Controllers;
+
+use App\Http\Resources\LocationResource;
+use App\Models\Location;
+use App\Models\LocationTableDetails;
+use Illuminate\Http\Request;
+use Illuminate\Http\Response;
+use App\Http\Requests\LocationStoreRequest;
+use App\Http\Requests\LocationUpdateRequest;
+use Illuminate\Support\Facades\DB;
+
+class LocationController extends Controller
+{
+    /**
+     * Display a listing of the resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function index(Request $request)
+    {
+        $locations = new Location();
+        if ($request->search) {
+            $locations = $locations->where('location_name', 'LIKE', "%{$request->search}%");
+        }
+        // $locations = $locations->latest()->paginate(10);
+        $locations = $locations->orderBy('location_name')->paginate(10);
+        if (request()->wantsJson()) {
+            return LocationResource::collection($locations);
+        }
+        return view('location.index')
+            ->with('locations', $locations);
+    }
+
+    /**
+     * Search result.
+     */
+    public function search(Request $request)
+    {
+        $locations = new Location();
+        if ($request->filled('search')) {
+            $locations = $locations->where('location_name', 'LIKE', "%{$request->search}%")->orderBy('location_name')->paginate(10);
+        }
+        return view('location.index')
+            ->with('locations', $locations)
+            ->with('search', $request->search);
+    }
+
+    /**
+     * Show the form for creating a new resource.
+     *
+     * @return \Illuminate\Http\Response
+     */
+    public function create()
+    {
+        return view('location.create');
+    }
+
+    /**
+     * Store a newly created resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @return \Illuminate\Http\Response
+     */
+    public function store(LocationStoreRequest $request)
+    {
+        $location = Location::create([
+            'location_name' => $request->location_name,
+            'number_of_tables' => $request->number_of_tables
+        ]);
+
+        if (!$location) {
+            return redirect()->back()->with('error', 'Sorry, there was a problem while creating the location.');
+        }
+        return redirect()->route('location.index')->with('success', 'Success, your location has been created.');
+    }
+
+    /**
+     * Display the specified resource.
+     *
+     * @param  \App\Models\Location $location
+     * @return \Illuminate\Http\Response
+     */
+    public function show(int $location_id)
+    {
+        $location = Location::find($location_id);
+        $location_list = Location::select('location_id', 'location_name', 'number_of_tables')->orderBy('location_name')->get();
+        $location_table_details = LocationTableDetails::select('location_table_detail_id', 'location_id', 'start_number', 'end_number', 'area')
+            ->where('location_id', '=', $location_id)
+            ->orderBy('start_number')->get();
+        return view('location.show')
+            ->with('location', $location)
+            ->with(compact('location_list'))
+            ->with(compact('location_table_details'));
+    }
+
+    /**
+     * Handle Ajax request.
+     */
+    public function newLocation(Request $request)
+    {
+        $location = Location::find($request->location_id);
+        $location_list = Location::select('location_id', 'location_name', 'number_of_tables')->orderBy('location_name')->get();
+        $location_table_details = LocationTableDetails::select('location_table_detail_id', 'location_id', 'start_number', 'end_number', 'area')
+            ->where('location_id', '=', $request->location_id)
+            ->orderBy('start_number')->get();
+        $location = $location->toArray();
+        $location_list = $location_list->toArray();
+        $location_table_details = $location_table_details->toArray();
+        // echo $location_table_details;
+
+        // return Response::json([
+        return response()->json([
+            'location' => $location,
+            // 'location_list' => $location_list,
+            'location_table_details' => $location_table_details
+        ]);
+    }
+
+    /**
+     * Show the form for editing the specified resource.
+     *
+     * @param  \App\Models\Location  $location
+     * @return \Illuminate\Http\Response
+     */
+    public function edit(Location $location)
+    {
+        return view('location.edit')
+            ->with('location', $location);
+    }
+
+    /**
+     * Update the specified resource in storage.
+     *
+     * @param  \Illuminate\Http\Request  $request
+     * @param  \App\Models\Location  $location
+     * @return \Illuminate\Http\Response
+     */
+    public function update(LocationUpdateRequest $request, Location $location)
+    {
+        $location->location_name = $request->location_name;
+        $location->number_of_tables = $request->number_of_tables;
+
+        if (!$location->save()) {
+            return redirect()->back()->with('error', 'Sorry, there\'s a problem while updating the location.');
+        }
+        return redirect()->route('location.index')->with('success', 'Success, the location has been updated.');
+    }
+
+    /**
+     * Remove the specified resource from storage.
+     *
+     * @param  \App\Models\Location  $location
+     * @return \Illuminate\Http\Response
+     */
+    public function destroy(Location $location)
+    {
+        $location->delete();
+        return response()->json([
+            'success' => true
+        ]);
+    }
+
+    //For Api////////////////////////////////////////////////////////////////////////////////
+    public function getLocationDetails(Request $request)
+    {
+        $details = DB::table('location')
+            ->select('location.location_name', 'location.number_of_tables', 'location_table_details.location_table_detail_id',
+                'location_table_details.start_number', 'location_table_details.end_number',
+                'location_table_details.area')
+            ->join('location_table_details', 'location_table_details.location_id', '=', 'location.location_id')
+            ->where('location.location_id', $request->location_id)
+            ->get();
+
+        if ($details) {
+            return response()->json([
+                'error' => false,
+                'data' => $details
+            ]);
+        } else {
+            return response()->json([
+                'error' => true,
+                'data' => 'No Data Found'
+            ]);
+        }
+    }
+}
